@@ -1,0 +1,148 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Compile the production function and result guards; stub only its OS/context boundary.
+#include <vapours/results.hpp>
+#include <memory>
+#include <iostream>
+
+namespace ams::hos {
+    constexpr u32 Version_23_0_0 = 23;
+    inline u32 version = 23;
+    inline u32 GetVersion() { return version; }
+}
+namespace ams::ro::impl {
+    enum class Fail { None, Address, Bss, Slot, Map, Parse, Perms };
+    struct NroInfo {
+        u64 base_address = 0, module_id = 0, nro_heap_address = 0, nro_heap_size = 0;
+        u64 bss_heap_address = 0, bss_heap_size = 0, code_size = 0, ro_size = 0, rw_size = 0;
+        bool is_compress = false;
+    };
+    inline Fail fail;
+    inline bool mapped, in_use, compressed, unmap_fails;
+    inline unsigned maps, parses, perms, unmaps;
+    inline NroInfo info;
+    inline std::array<u64, 6> mapped_args, unmapped_args;
+    constexpr u64 MappedBase = 0x10000000;
+    constexpr u32 InjectedError = 0x1216;
+
+    struct ProcessContext {
+        int GetProcessHandle() { return 7; }
+        Result GetFreeNroInfo(NroInfo **out) {
+            if (fail == Fail::Slot) return Result(InjectedError);
+            *out = &info;
+            return ResultSuccess();
+        }
+        Result ParseNro(u64 *module, u64 *rx, u64 *ro, u64 *rw, u64 *bss,
+                        bool *aligned, bool *is_compress, u64 base, u64, u64, u64) {
+            ++parses;
+            if (fail == Fail::Parse) return Result(InjectedError);
+            *module = 99; *rx = 0x3000; *ro = 0x2000; *rw = 0x1000; *bss = 0;
+            *aligned = false; *is_compress = compressed;
+            if (base != MappedBase) std::abort();
+            return ResultSuccess();
+        }
+        void SetNroInfoInUse(NroInfo *, bool used) { in_use = used; }
+    };
+    inline ProcessContext context;
+    ProcessContext *GetContextById(size_t) { return &context; }
+    Result ValidateAddressAndNonZeroSize(u64, u64) {
+        return Result(fail == Fail::Address ? InjectedError : 0);
+    }
+    Result ValidateAddressAndSize(u64, u64) {
+        return Result(fail == Fail::Bss ? InjectedError : 0);
+    }
+    Result MapNro(u64 *out, int handle, u64 addr, u64 size, u64 bss, u64 bss_size) {
+        ++maps;
+        if (fail == Fail::Map) return Result(InjectedError);
+        mapped = true; *out = MappedBase;
+        mapped_args = {static_cast<u64>(handle), MappedBase, addr, size, bss, bss_size};
+        return ResultSuccess();
+    }
+    Result SetNroPerms(int, u64, u64, u64, u64, bool) {
+        ++perms;
+        return Result(fail == Fail::Perms ? InjectedError : 0);
+    }
+    Result UnmapNro(int handle, u64 base, u64 addr, u64 size, u64 bss, u64 bss_size) {
+        ++unmaps;
+        unmapped_args = {static_cast<u64>(handle), base, addr, size, bss, bss_size};
+        if (!unmap_fails) mapped = false;
+        return Result(unmap_fails ? 0x416 : 0);
+    }
+
+@@PRODUCTION_FUNCTION@@
+
+    void Require(bool condition, const char *message) {
+        if (!condition) { std::cerr << message << '\n'; std::exit(42); }
+    }
+    void RunCase(Fail at, u64 bss_size, bool is_compressed, bool cleanup_fails) {
+        fail = at; compressed = is_compressed; unmap_fails = cleanup_fails;
+        mapped = in_use = false; maps = parses = perms = unmaps = 0; info = {};
+        mapped_args = {}; unmapped_args = {};
+        u64 out = 0xfeed;
+        const Result result = MapManualLoadModuleMemory(&out, 0, 0x20000000, 0xcbb000,
+                                                        bss_size ? 0x30000000 : 0, bss_size);
+        if (at == Fail::None) {
+            Require(result.IsSuccess() && mapped && in_use && unmaps == 0, "successful load changed");
+            Require(out == MappedBase && info.nro_heap_address == 0x20000000 &&
+                    info.nro_heap_size == 0xcbb000 && info.bss_heap_size == bss_size &&
+                    info.is_compress == is_compressed && info.rw_size == 0x1000,
+                    "successful load metadata changed");
+            Require(info.code_size == (hos::version >= 23 ? 0x3000 : 0x5000) &&
+                    info.ro_size == (hos::version >= 23 ? 0x2000 : 0), "versioned metadata changed");
+        } else {
+            Require(result.GetValue() == InjectedError && !in_use && out == 0xfeed,
+                    "original failure/output must be preserved");
+            const bool cleanup_expected = at == Fail::Parse || at == Fail::Perms;
+            Require(unmaps == (cleanup_expected ? 1U : 0U),
+                    at == Fail::Parse ? "parse failure cleanup missing or repeated" : "wrong cleanup count");
+            if (cleanup_expected) {
+                Require(unmapped_args == mapped_args, "cleanup must release the exact mapped source/BSS");
+                Require(mapped == cleanup_fails, "cleanup boundary state incorrect");
+            } else {
+                Require(!mapped, "failed initial map left a mapping");
+            }
+            Require(perms == (at == Fail::Perms ? 1U : 0U), "perms ran after an earlier failure");
+        }
+    }
+}
+
+namespace ams::util {
+    template<class... Args> int SNPrintf(char *out, size_t size, const char *format, Args... args) {
+        return std::snprintf(out, size, format, args...);
+    }
+}
+namespace ams::display_test {
+    struct Firmware { char display_version[24]; } g_ams_firmware_version;
+    struct ApiInfo {
+        u32 GetMajorVersion() const { return 1; }
+        u32 GetMinorVersion() const { return 12; }
+        u32 GetMicroVersion() const { return 1; }
+    };
+    void Test(const char *hos_version, char emummc_char) {
+        std::strcpy(g_ams_firmware_version.display_version, hos_version);
+        const auto api_info = ApiInfo{};
+        char display_version[sizeof(g_ams_firmware_version.display_version)];
+        std::memset(display_version, 0xa5, sizeof(display_version));
+        const int written = @@PRODUCTION_FORMAT@@;
+        ro::impl::Require(written > 0 && static_cast<size_t>(written) < sizeof(display_version), "version truncation");
+        const std::string expected = std::string(hos_version) + "|AMS 1.12.1p1|" + emummc_char;
+        ro::impl::Require(display_version == expected, "patch version or eMMC mode missing");
+    }
+}
+int main() {
+    using namespace ams::ro::impl;
+    unsigned count = 0;
+    for (u32 version : {22U, 23U}) {
+        ams::hos::version = version;
+        for (u64 bss : {u64{0}, u64{0x8000}})
+            for (bool compressed_case : {false, true})
+                for (Fail failure : {Fail::Address, Fail::Bss, Fail::Slot, Fail::Map, Fail::Parse, Fail::Perms, Fail::None}) {
+                    RunCase(failure, bss, compressed_case, false); ++count;
+                }
+    }
+    for (Fail failure : {Fail::Parse, Fail::Perms}) {
+        RunCase(failure, 0x8000, false, true); ++count;
+    }
+    for (const char *version : {"0.0.0", "23.0.1", "99.99.99"})
+        for (char mode : {'S', 'E'}) { ams::display_test::Test(version, mode); ++count; }
+    std::cout << count << " production-function/format boundary cases passed\n";
+}

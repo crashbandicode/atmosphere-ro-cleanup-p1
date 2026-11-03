@@ -708,13 +708,14 @@ namespace ams::ro::impl {
         
         /* Map the NRO. */
         R_TRY(MapNro(std::addressof(nro_info->base_address), context->GetProcessHandle(), nro_address, nro_size, bss_address, bss_size));
+        /* Failed parsing must release the code mapping and restore the source pages. */
+        ON_RESULT_FAILURE { R_DISCARD(UnmapNro(context->GetProcessHandle(), nro_info->base_address, nro_address, nro_size, bss_address, bss_size)); };
         
         /* Parse the NRO. */
         u64 nro_rx_size = 0, nro_ro_size = 0, nro_rw_size = 0, nro_bss_size = 0;
         bool nro_aligned_header = false;
         bool nro_is_compress = false;
         R_TRY(context->ParseNro(std::addressof(nro_info->module_id), std::addressof(nro_rx_size), std::addressof(nro_ro_size), std::addressof(nro_rw_size), std::addressof(nro_bss_size), std::addressof(nro_aligned_header), std::addressof(nro_is_compress), nro_info->base_address, total_size, nro_size, bss_size));
-        ON_RESULT_FAILURE { R_DISCARD(UnmapNro(context->GetProcessHandle(), nro_info->base_address, nro_address, nro_size, bss_address, bss_size)); };
         
         /* Set NRO perms. */
         R_TRY(SetNroPerms(context->GetProcessHandle(), nro_info->base_address, nro_rx_size, nro_ro_size, nro_rw_size + nro_bss_size, nro_aligned_header));
