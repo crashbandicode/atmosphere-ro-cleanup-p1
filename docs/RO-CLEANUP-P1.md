@@ -1,11 +1,11 @@
 # RO failed-load cleanup patch 1
 
-2026-11-03. Atmosphere 1.12.1 (`6b0c077b4c608a3a2ee712b8dc35fee87ceb62e8`).
+2026-11-03; rebased 2026-11-12 onto Atmosphere 1.12.2 (`4e3f37038d9e82dde7054897213ab32b2ecf651f`).
 After a successful NRO map, the existing unmap guard is registered before the parser.
 Failed parsing, including authorization failure, releases the NRO/BSS mappings
 and returns the original error. Success keeps the mapping. Authorization stays enforced.
 
-System Settings shows `AMS 1.12.1p1` with `S` or `E`. Numeric API fields stay 1.12.1.
+System Settings shows `AMS 1.12.2p1` with `S` or `E`. Numeric API fields stay 1.12.2.
 
 `python3 -I tests/ro_cleanup_p1/run.py` compiles the map/parse region with real Vapours
 guards and injects map failure, parse failure, and success. The official baseline must

@@ -6,7 +6,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[2]
 path = "stratosphere/ro/source/impl/ro_service_impl.cpp"
-baseline = "6b0c077b4c608a3a2ee712b8dc35fee87ceb62e8"
+baseline = "4e3f37038d9e82dde7054897213ab32b2ecf651f"
 template = Path(__file__).with_name("harness.cpp.in").read_text()
 flags = "-std=gnu++23 -O2 -Wall -Wextra -Werror -DATMOSPHERE_OS_LINUX"
 flags += " -DATMOSPHERE_ARCH_X64 -DATMOSPHERE_BOARD_GENERIC_LINUX -DATMOSPHERE_IS_STRATOSPHERE"

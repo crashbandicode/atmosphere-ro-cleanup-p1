@@ -64,9 +64,9 @@ namespace ams::mitm::settings {
                 const char emummc_char = emummc::IsActive() ? 'E' : 'S';
 
                 /* Patch 1 identifies the RO failed-load cleanup fix without changing API version fields. */
-                /* At AMS 1.12.1, even an eight-character HOS version fits with the p1 suffix. */
+                /* At AMS 1.12.2, even an eight-character HOS version fits with the p1 suffix. */
                 char display_version[sizeof(g_ams_firmware_version.display_version)];
-                static_assert(sizeof("99.99.99|AMS 1.12.1p1|S") <= sizeof(display_version));
+                static_assert(sizeof("99.99.99|AMS 1.12.2p1|S") <= sizeof(display_version));
 
                 util::SNPrintf(display_version, sizeof(display_version), "%s|AMS %u.%u.%up1|%c", g_ams_firmware_version.display_version, api_info.GetMajorVersion(), api_info.GetMinorVersion(), api_info.GetMicroVersion(), emummc_char);
 
